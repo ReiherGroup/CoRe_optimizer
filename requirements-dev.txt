@@ -1,0 +1,7 @@
+-r requirements.txt
+numpy
+pytest
+coverage
+pylint
+flake8
+mypy

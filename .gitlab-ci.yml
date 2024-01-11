@@ -1,0 +1,46 @@
+image: gitlab.chab.ethz.ch:4567/reiher/docker/scine-gcc:latest
+
+before_script:
+  - python3 --version
+  - python3 -m pip install -r requirements-dev.txt
+
+stages:
+  - quality
+  - build
+
+flake8:
+  stage: quality
+  tags:
+    - default_docker
+  script:
+    - python3 -m flake8 core_optimizer tests
+
+mypy:
+  stage: quality
+  tags:
+    - default_docker
+  script:
+    - python3 -m mypy core_optimizer tests
+
+pylint:
+  stage: quality
+  tags:
+    - default_docker
+  script:
+    - python3 -m pylint core_optimizer tests
+
+tests:
+  stage: build
+  tags:
+    - default_docker
+  script:
+    - python3 -m coverage run -m pytest tests
+    - python3 -m coverage report -m --precision=2
+    - python3 -m coverage xml
+  artifacts:
+    expire_in: 1 day
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+  coverage: '/^TOTAL.+?(\d+.\d+\%)$/'

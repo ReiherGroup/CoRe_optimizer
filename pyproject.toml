@@ -1,0 +1,7 @@
+[build-system]
+requires = ['setuptools>=61.0']
+build-backend = 'setuptools.build_meta'
+
+[tool.coverage.run]
+source = ['core_optimizer']
+omit = ['core_optimizer/__init__.py', 'core_optimizer/__main__.py', 'core_optimizer/_version_.py']

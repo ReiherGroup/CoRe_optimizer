@@ -7,10 +7,10 @@ Setup of core_optimizer Module
 # import modules
 import sys
 from os import path
-from setuptools import setup
+from setuptools import setup, find_packages
 
 # check Python version
-min_version = (3, 6)
+min_version = (3, 8)
 if sys.version_info < min_version:
     error = '''
 core_optimizer does not support Python {0}.{1}.
@@ -48,6 +48,10 @@ setup(
     long_description = readme,
     author = 'Marco Eckhoff, Markus Reiher',
     author_email = 'lifelong_ml@phys.chem.ethz.ch',
+    url = 'https://github.com/ReiherGroup/CoRe_optimizer',
+    python_requires = '>={}'.format('.'.join(str(n) for n in min_version)),
+    packages = find_packages(include=['core_optimizer', 'core_optimizer.*'],
+                             exclude=['core_optimizer.tests*']),
     install_requires = requirements,
     license = 'BSD (3-clause)',
     classifiers = [

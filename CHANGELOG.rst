@@ -1,6 +1,11 @@
 Changelog
 =========
 
+Release 1.0.1
+-------------
+
+Bug fix in setup.py
+
 Release 1.0.0
 -------------
 
@@ -10,4 +15,4 @@ Continual Resilient (CoRe) optimizer:
  - plasticity factor based on importance score
  - weight decay
  - foreach implementation
- - minization and maximization
+ - minimization and maximization

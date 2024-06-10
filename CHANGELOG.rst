@@ -1,6 +1,12 @@
 Changelog
 =========
 
+Release 1.1.0
+-------------
+
+Parameter frozen defines p_frozen instead of n_frozen
+
+
 Release 1.0.1
 -------------
 
@@ -14,5 +20,5 @@ Continual Resilient (CoRe) optimizer:
  - RPROP-like step size update
  - plasticity factor based on importance score
  - weight decay
- - foreach implementation
  - minimization and maximization
+ - foreach implementation

@@ -4,10 +4,10 @@
 Setup of core_optimizer Module
 '''
 
-# import modules
 import sys
 from os import path
 from setuptools import setup, find_packages
+
 
 # check Python version
 min_version = (3, 8)
@@ -27,12 +27,12 @@ pip install --upgrade pip
 '''.format(*(sys.version_info[:2] + min_version))
     sys.exit(error)
 
-# read README.rst and requirements.txt ignoring any commented-out lines
+# read README.rst
 here = path.abspath(path.dirname(__file__))
-
 with open(path.join(here, 'README.rst'), encoding='utf-8') as readme_file:
     readme = readme_file.read()
 
+# read requirements.txt ignoring any commented-out lines
 with open(path.join(here, 'requirements.txt'), encoding='utf-8') as requirements_file:
     requirements = [line for line in requirements_file.read().splitlines() if not line.startswith('#')]
 
@@ -52,6 +52,8 @@ setup(
     python_requires = '>={}'.format('.'.join(str(n) for n in min_version)),
     packages = find_packages(include=['core_optimizer', 'core_optimizer.*'],
                              exclude=['core_optimizer.tests*']),
+    include_package_data = True,
+    package_data = {'docs': ['documentation.pdf']},
     install_requires = requirements,
     license = 'BSD (3-clause)',
     classifiers = [

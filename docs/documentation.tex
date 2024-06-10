@@ -1,0 +1,95 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{setspace}
+\spacing{1.0}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2cm]{geometry}
+\pagestyle{empty}
+\hyphenation{betas}
+
+\begin{document}
+
+\begin{Large}\textbf{CoRe Optimizer}\end{Large}
+
+\vspace*{0.8cm}
+\hspace*{-0.2cm}\begin{tabular}{p{0.075\linewidth}p{0.925\linewidth}}
+    CLASS & core{\_}optimizer.CoRe(\textit{params, lr=1e-3, step{\_}sizes=(1e-6, 1e-2), etas=(0.7375, 1.2), betas=(0.7375, 0.8125, 250.0, 0.99), eps=1e-8, weight{\_}decay=0.1, score{\_}history=0, frozen=0.0, *, maximize=False, foreach=None})\\
+\end{tabular}
+\vspace*{0.4cm}
+
+Implements the Continual Resilient (CoRe) optimizer.
+
+$$
+\begin{aligned}
+    &\rule{111mm}{0.4pt} \\
+    &\textbf{input} : \theta\ \text{(params)},\ f(\theta)\ \text{(objective)},
+                      \ s_\mathrm{min},s_\mathrm{max}\ \text{(step sizes)}, \\
+    &\hspace{13mm} \eta_-,\eta_+\ \text{(etas)},
+                   \ \beta_1^\mathrm{a},\beta_1^\mathrm{b},\beta_1^\mathrm{c},\beta_2
+                   \ \text{(betas)},\ \epsilon\ \text{(eps)}, \\
+    &\hspace{13mm} d\ \text{(weight decay)},\ t_\mathrm{hist}\ \text{(score history)},
+                   \ p_\mathrm{frozen}\ \text{(frozen)} \\
+    &\textbf{initialize} : s_0 \leftarrow \text{lr},\ g_0 \leftarrow 0,\ h_0 \leftarrow 0,\ S_0 \leftarrow 0 \\
+    &\rule{111mm}{0.4pt} \\
+    &\textbf{for}\ t=1\ \textbf{to}\ \ldots\ \textbf{do} \\
+    &\hspace{5mm} G_t \leftarrow \nabla_{\theta}f_t(\theta_{t-1})\\
+    &\hspace{5mm} \textbf{if}\ \text{maximize} \\
+    &\hspace{10mm} G_t \leftarrow -G_t\\
+    &\hspace{5mm} \beta_{1,t} \leftarrow \beta_1^\mathrm{b} + (\beta_1^\mathrm{a}-\beta_1^\mathrm{b})\,
+                  \mathrm{exp}\{-[(t-1)/\beta_1^\mathrm{c}]^2\}\\
+    &\hspace{5mm} g_t \leftarrow \beta_{1,t} g_{t-1} + (1-\beta_{1,t}) G_t \\
+    &\hspace{5mm} \textbf{if}\ \beta_2 \geq 0 \\
+    &\hspace{10mm} h_t \leftarrow \beta_2 h_{t-1} + (1-\beta_2) G_t^2 \\
+    &\hspace{5mm} P_t \leftarrow 1 \\
+    &\hspace{5mm} \textbf{if}\ t_\mathrm{hist}>0 \land t>t_\mathrm{hist}
+                  \land S_{t-1}\ \mathrm{top}\text{-}p_\mathrm{frozen}\ \mathrm{in}\ \mathbf{S}_{t-1}\\
+    &\hspace{10mm} P_t \leftarrow 0 \\
+    &\hspace{5mm} \textbf{if}\ g_{t-1} g_t P_t > 0 \\
+    &\hspace{10mm} s_t \leftarrow \mathrm{min}(\eta_+ s_{t-1}, s_\mathrm{max}) \\
+    &\hspace{5mm} \textbf{else if}\ g_{t-1} g_t P_t < 0 \\
+    &\hspace{10mm} s_t \leftarrow \mathrm{max}(\eta_- s_{t-1}, s_\mathrm{min}) \\
+    &\hspace{5mm} \textbf{else} \\
+    &\hspace{10mm} s_t \leftarrow s_{t-1} \\
+    &\hspace{5mm} \textbf{if}\ \beta_2 \geq 0 \\
+    &\hspace{10mm} u_t \leftarrow g_t / (1-\beta_{1,t}^t) / \{[h_t/(1-\beta_2^t)]^{0.5}+\epsilon\} \\
+    &\hspace{5mm} \textbf{else} \\
+    &\hspace{10mm} u_t \leftarrow \mathrm{sgn}(g_t) \\
+    &\hspace{5mm} \textbf{if}\ t_\mathrm{hist} > 0\\
+    &\hspace{10mm} \textbf{if}\ t \leq t_\mathrm{hist}\\
+    &\hspace{15mm} S_t \leftarrow S_{t-1} + t_\mathrm{hist}^{-1} g_t u_t P_t s_t\\
+    &\hspace{10mm} \textbf{else} \\
+    &\hspace{15mm} S_t \leftarrow (1-t_\mathrm{hist}^{-1}) S_\xi^{\tau-1}
+                   + t_\mathrm{hist}^{-1} g_t u_t P_t s_t\\
+    &\hspace{5mm}\theta_t \leftarrow (1-d|u_t|P_ts_t) \theta_{t-1} - u_t P_t s_t \\
+    &\rule{111mm}{0.4pt} \\[-1.ex]
+    &\bf{return}\ \theta_t \\[-1.ex]
+    &\rule{111mm}{0.4pt} \\[-1.ex]
+\end{aligned}
+$$
+
+For further details regarding the algorithm we refer to the papers \textcolor{blue}{\href{https://doi.org/10.1021/acs.jctc.3c00279}{Lifelong Machine Learning Potentials}} and \textcolor{blue}{\href{https://doi.org/10.1088/2632-2153/ad1f76}{CoRe optimizer: an all-in-one solution for machine learning}}.
+
+\vspace*{0.8cm}
+\textbf{Parameters}:
+\begin{itemize}
+    \item \textbf{params} \textit{(iterable)}: iterable of parameters to optimize or dicts defining parameter groups
+    \item \textbf{lr} \textit{(float, optional)}: learning rate to set initial step size (default: 1e-3)
+    \item \textbf{step{\_}sizes} \textit{(Tuple[float, float], optional)}: pair of minimal and maximal allowed step sizes (recommendation: maximal step size of 1e-3 for mini-batch learning, 1.0 for batch learning, and 1e-2 for intermediate cases) (default: (1e-6, 1e-2))
+    \item \textbf{etas} \textit{(Tuple[float, float], optional)}: pair of etaminus and etaplus that are multiplicative increase and decrease factors (default: (0.7375, 1.2))
+    \item \textbf{betas} \textit{(Tuple[float, float, float, float], optional)}: coefficients beta1a, beta1b, beta1c, and beta2 used for computing running averages of gradient and its square (default: (0.7375, 0.8125, 250.0, 0.99))
+    \item \textbf{eps} \textit{(float, optional)}: term added to the denominator to improve numerical stability (default: 1e-8)
+    \item \textbf{weight{\_}decay} \textit{(float or List[float], optional)}: weight decay for all parameters or list of weight decays for parameter groups (default: 0.1)
+    \item \textbf{score{\_}history} \textit{(int, optional)}: number of optimization steps to build the score history before applying plasticity factors (default: 0)
+    \item \textbf{frozen} \textit{(float or List[float], optional)}: fraction of all parameters frozen by the plasticity factors or list of fractions for parameter groups (applies if score{\_}history > 0) (default: 0.0)
+    \item \textbf{maximize} \textit{(bool, optional)}: maximize the objective with respect to the params, instead of minimizing (default: False)
+    \item \textbf{foreach} \textit{(bool, optional)}: whether foreach implementation of optimizer is used. If unspecified by the user (so foreach is None), we will try to use foreach over the for-loop implementation on CUDA, since it is usually significantly more performant. Note that the foreach implementation uses $\sim$ sizeof(params) more peak memory than the for-loop version due to the intermediates being a tensorlist vs just one tensor. If memory is prohibitive, batch fewer parameters through the optimizer at a time or switch this flag to False (default: None)
+\end{itemize}
+
+\end{document}

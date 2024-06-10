@@ -12,15 +12,16 @@ Its algorithm combines Adam- and RPROP-like step size updates and employs weight
 Installation
 ------------
 
-The module core_optimizer can be installed using pip3 once the repository has been cloned.
+The module core_optimizer can be installed using pip once the repository has been cloned.
 
 .. code-block:: bash
 
    git clone <core_optimizer-repository>
-   pip3 install ./core_optimizer
+   cd <core_optimizer-repository>
+   python3 -m pip install .
 
 A non super user can install the package using a virtual environment or the ``--user`` flag.
-If there is no space left on device for TMPDIR, one can use ``TMPDIR=<PATH>`` in front of pip3,
+If there is no space left on device for TMPDIR, one can use ``TMPDIR=<PATH>`` in front of python3,
 with <PATH> being a directory with more space for temporary files.
 
 Usage
@@ -68,7 +69,7 @@ Examples which are ready to go can be found in test_core_optimizer.py.
        loss.backward()   # calculate loss gradient
        optimizer.step()   # adjust model parameters
 
-The algorithm and all hyperparameters of the CoRe optimizer are explained in the file ``docs.pdf``.
+The algorithm and all hyperparameters of the CoRe optimizer are explained in the file ``docs/documentation.pdf``.
 
 License and Copyright Information
 ---------------------------------
@@ -81,10 +82,10 @@ How to Cite
 
 When publishing results obtained with the CoRe optimizer, please cite
 M. Eckhoff, M. Reiher, `Lifelong Machine Learning Potentials
-<https://doi.org/10.1021/acs.jctc.3c00279>`_, J. Chem. Theory Comput. 19, 3509-3525 (2023)
+<https://doi.org/10.1021/acs.jctc.3c00279>`_, J. Chem. Theory Comput. 2023, 19, 3509-3525
 and
-M. Eckhoff, M. Reiher, `CoRe Optimizer: An All-in-One Solution for Machine Learning
-<https://doi.org/10.48550/arXiv.2307.15663>`_, arXiv:2307.15663 [cs.LG] (2023).
+M. Eckhoff, M. Reiher, `CoRe optimizer: an all-in-one solution for machine learning
+<https://doi.org/10.1088/2632-2153/ad1f76>`_, Mach. Learn.: Sci. Technol. 2024, 5, 015018.
 
 Support and Contact
 -------------------

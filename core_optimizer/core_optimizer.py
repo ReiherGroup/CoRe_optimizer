@@ -39,18 +39,22 @@ class CoRe(Optimizer):
     def __init__(self,
                  params: ParamsT,
                  lr: float = 1e-3,
+                 step_sizes: Tuple[float, float] = (1e-6, 1e-2),
+                 etas: Tuple[float, float] = (0.7375, 1.2),
                  betas: Tuple[float, float, float, float] = (0.7375, 0.8125, 250.0, 0.99),
                  eps: float = 1e-8,
-                 etas: Tuple[float, float] = (0.7375, 1.2),
-                 step_sizes: Tuple[float, float] = (1e-6, 1e-2),
                  weight_decay: Union[float, list] = 0.1,
                  score_history: int = 0,
-                 frozen: Union[int, list] = 0,
+                 frozen: Union[float, list] = 0.0,
                  *,
-                 foreach: Optional[bool] = None,
-                 maximize: bool = False):
+                 maximize: bool = False,
+                 foreach: Optional[bool] = None):
         if lr <= 0.0:
             raise ValueError(f'Invalid learning rate: {lr}')
+        if not 0.0 < step_sizes[0] <= step_sizes[1]:
+            raise ValueError(f'Invalid min and max step sizes: {step_sizes[0]}, {step_sizes[1]}')
+        if not 0.0 < etas[0] <= 1.0 <= etas[1]:
+            raise ValueError(f'Invalid eta values: {etas[0]}, {etas[1]}')
         if (
             not 0.0 <= betas[0] < 1.0
             or not 0.0 <= betas[1] < 1.0
@@ -61,39 +65,39 @@ class CoRe(Optimizer):
                 f'Invalid beta values: {betas[0]}, {betas[1]}, {betas[2]}, {betas[3]}')
         if eps < 0.0:
             raise ValueError(f'Invalid epsilon value: {eps}')
-        if not 0.0 < etas[0] <= 1.0 <= etas[1]:
-            raise ValueError(f'Invalid eta values: {etas[0]}, {etas[1]}')
-        if not 0.0 < step_sizes[0] <= step_sizes[1]:
-            raise ValueError(f'Invalid min and max step sizes: {step_sizes[0]}, {step_sizes[1]}')
         if isinstance(weight_decay, float):
+            if weight_decay < 0.0:
+                raise ValueError(f'Invalid weight decay: {weight_decay}')
             weight_decay = [weight_decay]
         elif not isinstance(weight_decay, list):
             raise ValueError(f'Invalid weight decay: {weight_decay}')
         if score_history < 0:
             raise ValueError(f'Invalid score history: {score_history}')
-        if isinstance(frozen, int):
+        if isinstance(frozen, float):
+            if not 0.0 <= frozen <= 1.0:
+                raise ValueError(f'Invalid frozen: {frozen}')
             frozen = [frozen]
         elif not isinstance(frozen, list):
             raise ValueError(f'Invalid frozen: {frozen}')
 
         defaults = {'lr': lr,
+                    'step_sizes': step_sizes,
+                    'etas': etas,
                     'betas': betas,
                     'eps': eps,
-                    'etas': etas,
-                    'step_sizes': step_sizes,
                     'weight_decay': weight_decay,
                     'score_history': score_history,
                     'frozen': frozen,
-                    'foreach': foreach,
                     'maximize': maximize,
+                    'foreach': foreach,
                     'differentiable': False}
         super().__init__(params, defaults)
 
     def __setstate__(self, state):
         super().__setstate__(state)
         for group in self.param_groups:
-            group.setdefault('foreach', None)
             group.setdefault('maximize', False)
+            group.setdefault('foreach', None)
             group.setdefault('differentiable', False)
 
     def _init_group(self,
@@ -104,28 +108,29 @@ class CoRe(Optimizer):
                     prevs_2,
                     step_sizes,
                     scores,
+                    frozens,
                     steps):
         has_complex = False
+        i = -1
         for p in group['params']:
+            i += 1
             if p.grad is None:
                 continue
             has_complex |= torch.is_complex(p)
             params.append(p)
             grad = p.grad
-            if grad.is_sparse:
-                raise RuntimeError('CoRe does not support sparse gradients')
+            assert not grad.is_sparse, 'CoRe does not support sparse gradients'
 
             grads.append(grad)
             state = self.state[p]
 
-            # State initialization
             if len(state) == 0:
                 state['step'] = 0
                 state['prev_1'] = torch.zeros_like(p, memory_format=torch.preserve_format)
                 state['prev_2'] = torch.zeros_like(p, memory_format=torch.preserve_format)
                 if p.dtype.is_complex:
-                    # Complex Number should be as if they are two independent real numbers.
-                    # Hence the step_size shouldn't be zero for imaginary part.
+                    # Complex number should be as if they are two independent real numbers.
+                    # Hence the step_size should not be zero for imaginary part.
                     state['step_size'] = grad.new().resize_as_(grad).fill_(
                         complex(group['lr'], group['lr']))
                     state['score'] = grad.new().resize_as_(grad).fill_(
@@ -133,12 +138,15 @@ class CoRe(Optimizer):
                 else:
                     state['step_size'] = grad.new().resize_as_(grad).fill_(group['lr'])
                     state['score'] = grad.new().resize_as_(grad).fill_(0.0)
+                state['frozen'] = int(group['frozen'][i % len(group['frozen'])]
+                                      * torch.prod(torch.tensor(grad.size())).item())
 
             prevs_1.append(state['prev_1'])
             prevs_2.append(state['prev_2'])
             step_sizes.append(state['step_size'])
             scores.append(state['score'])
             steps.append(state['step'])
+            frozens.append(state['frozen'])
 
             state['step'] += 1
         return has_complex
@@ -164,16 +172,16 @@ class CoRe(Optimizer):
             prevs_2 = []
             step_sizes = []
             scores = []
+            frozens = []
             steps = []
+            step_size_min, step_size_max = group['step_sizes']
+            eta_minus, eta_plus = group['etas']
             beta_1_initial, beta_1_final, beta_1_step, beta_2 = group['betas']
             eps = group['eps']
-            eta_minus, eta_plus = group['etas']
-            step_size_min, step_size_max = group['step_sizes']
             weight_decay = group['weight_decay']
             score_history = group['score_history']
-            frozen = group['frozen']
-            foreach = group['foreach']
             maximize = group['maximize']
+            foreach = group['foreach']
             differentiable = group['differentiable']
 
             has_complex = self._init_group(group,
@@ -183,6 +191,7 @@ class CoRe(Optimizer):
                                            prevs_2,
                                            step_sizes,
                                            scores,
+                                           frozens,
                                            steps)
 
             core(params,
@@ -190,22 +199,22 @@ class CoRe(Optimizer):
                  prevs_1,
                  prevs_2,
                  step_sizes,
+                 step_size_min=step_size_min,
+                 step_size_max=step_size_max,
+                 eta_minus=eta_minus,
+                 eta_plus=eta_plus,
                  beta_1_initial=beta_1_initial,
                  beta_1_final=beta_1_final,
                  beta_1_step=beta_1_step,
                  beta_2=beta_2,
                  eps=eps,
-                 eta_minus=eta_minus,
-                 eta_plus=eta_plus,
-                 step_size_min=step_size_min,
-                 step_size_max=step_size_max,
                  weight_decay=weight_decay,
                  scores=scores,
                  score_history=score_history,
-                 frozen=frozen,
+                 frozens=frozens,
                  steps=steps,
-                 foreach=foreach,
                  maximize=maximize,
+                 foreach=foreach,
                  differentiable=differentiable,
                  has_complex=has_complex)
 
@@ -218,11 +227,12 @@ CoRe.__doc__ = r'''Implements the Continual Resilient (CoRe) optimizer.
        \begin{aligned}
             &\rule{110mm}{0.4pt} \\
             &\textbf{input} : \theta\ \text{(params)},\ f(\theta)\ \text{(objective)},
+                              \ s_\mathrm{min},s_\mathrm{max}\ \text{(step sizes)}, \\
+            &\hspace{13mm} \eta_-,\eta_+\ \text{(etas)},
                            \ \beta_1^\mathrm{a},\beta_1^\mathrm{b},\beta_1^\mathrm{c},\beta_2
                            \ \text{(betas)},\ \epsilon\ \text{(eps)}, \\
-            &\hspace{13mm} \eta_-,\eta_+\ \text{(etas)},\ s_\mathrm{min},s_\mathrm{max}
-                           \ \text{(step sizes)},\ d\ \text{(weight decay)}, \\
-            &\hspace{13mm} t_\mathrm{hist}\ \text{(score history)},\ n_\mathrm{frozen}\ \text{(frozen)} \\
+            &\hspace{13mm} d\ \text{(weight decay)},\ t_\mathrm{hist}\ \text{(score history)},
+                           \ p_\mathrm{frozen}\ \text{(frozen)} \\
             &\textbf{initialize} : s_0 \leftarrow \text{lr},\ g_0 \leftarrow 0,\ h_0 \leftarrow 0,\ S_0 \leftarrow 0 \\
             &\rule{110mm}{0.4pt} \\
             &\textbf{for}\ t=1\ \textbf{to}\ \ldots\ \textbf{do} \\
@@ -236,7 +246,7 @@ CoRe.__doc__ = r'''Implements the Continual Resilient (CoRe) optimizer.
             &\hspace{10mm} h_t \leftarrow \beta_2 h_{t-1} + (1-\beta_2) G_t^2 \\
             &\hspace{5mm} P_t \leftarrow 1 \\
             &\hspace{5mm} \textbf{if}\ t_\mathrm{hist}>0 \land t>t_\mathrm{hist}
-                          \land S_{t-1}\ \mathrm{top}\text{-}n_\mathrm{frozen}\ \mathrm{in}\ \mathbf{S}_{t-1}\\
+                          \land S_{t-1}\ \mathrm{top}\text{-}p_\mathrm{frozen}\ \mathrm{in}\ \mathbf{S}_{t-1}\\
             &\hspace{10mm} P_t \leftarrow 0 \\
             &\hspace{5mm} \textbf{if}\ g_{t-1} g_t P_t > 0 \\
             &\hspace{10mm} s_t \leftarrow \mathrm{min}(\eta_+ s_{t-1}, s_\mathrm{max}) \\
@@ -267,25 +277,31 @@ CoRe.__doc__ = r'''Implements the Continual Resilient (CoRe) optimizer.
     Args:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
-        lr (float, optional): learning rate (default: 1e-3)
+        lr (float, optional): learning rate to set initial step size (default:
+            1e-3)
+        step_sizes (Tuple[float, float], optional): pair of minimal and maximal
+            allowed step sizes (recommendation: maximal step size of 1e-3 for
+            mini-batch learning, 1.0 for batch learning, and 1e-2 for
+            intermediate cases) (default: (1e-6, 1e-2))
+        etas (Tuple[float, float], optional): pair of etaminus and etaplus
+            that are multiplicative increase and decrease factors (default:
+            (0.7375, 1.2))
         betas (Tuple[float, float, float, float], optional): coefficients
-            (beta1a, beta1b, beta1c, beta2) used for computing running averages of
-            gradient and its square (default: (0.7375, 0.8125, 250.0, 0.99))
+            beta1a, beta1b, beta1c, and beta2 used for computing running
+            averages of gradient and its square (default: (0.7375, 0.8125,
+            250.0, 0.99))
         eps (float, optional): term added to the denominator to improve
             numerical stability (default: 1e-8)
-        etas (Tuple[float, float], optional): pair of (etaminus, etaplus) that
-            are multiplicative increase and decrease factors (default: (0.7375, 1.2))
-        step_sizes (Tuple[float, float], optional): a pair of minimal and
-            maximal allowed step sizes (default: (1e-6, 1e-2))
         weight_decay (float or List[float], optional): weight decay for all
-            parameters or list of weight decays for parameter groups (default: 0.1)
-        score_history (int, optional): number of epochs to build the score history
-            before applying plasticity factors (default: 0)
-        frozen (int or List[int], optional): number of parameters frozen by the
-            plasticity factors in each parameter group (individual specifications
-            for each parameter group can be provided by a list (default: 0)
-        {_foreach_doc}
+            parameters or list of weight decays for parameter groups
+            (default: 0.1)
+        score_history (int, optional): number of optimization steps to build
+            the score history before applying plasticity factors (default: 0)
+        frozen (float or List[float], optional): fraction of all parameters
+            frozen by the plasticity factors or list of fractions for parameter
+            groups (applies if score_history > 0) (default: 0.0)
         {_maximize_doc}
+        {_foreach_doc}
     '''
 
 
@@ -294,26 +310,24 @@ def core(params: List[Tensor],
          prevs_1: List[Tensor],
          prevs_2: List[Tensor],
          step_sizes: List[Tensor],
-         # kwonly args with defaults are not supported by functions compiled with torchscript issue #70627
-         # setting this as kwarg for now as functional API is compiled by torch/distributed/optim
-         foreach: Optional[bool] = None,
          maximize: bool = False,
+         foreach: Optional[bool] = None,
          differentiable: bool = False,
          has_complex: bool = False,
          *,
+         step_size_min: float,
+         step_size_max: float,
+         eta_minus: float,
+         eta_plus: float,
          beta_1_initial: float,
          beta_1_final: float,
          beta_1_step: float,
          beta_2: float,
          eps: float,
-         eta_minus: float,
-         eta_plus: float,
-         step_size_min: float,
-         step_size_max: float,
          weight_decay: List[float],
          scores: List[Tensor],
          score_history: int,
-         frozen: List[int],
+         frozens: List[int],
          steps: List[int]):
     r'''
     Functional API that performs core algorithm computation.
@@ -324,10 +338,10 @@ def core(params: List[Tensor],
     if foreach is None:
         _, foreach = _default_to_fused_or_foreach(params, differentiable, use_fused=False)
 
-    if foreach and torch.jit.is_scripting():
-        raise RuntimeError('torch.jit.script not supported with foreach optimizers')
+    assert not (foreach and torch.jit.is_scripting()), \
+        'torch.jit.script not supported with foreach optimizers'
 
-    if foreach and not torch.jit.is_scripting():
+    if foreach:
         func = _multi_tensor_core
     else:
         func = _single_tensor_core
@@ -337,19 +351,19 @@ def core(params: List[Tensor],
          prevs_1,
          prevs_2,
          step_sizes,
+         step_size_min=step_size_min,
+         step_size_max=step_size_max,
+         eta_minus=eta_minus,
+         eta_plus=eta_plus,
          beta_1_initial=beta_1_initial,
          beta_1_final=beta_1_final,
          beta_1_step=beta_1_step,
          beta_2=beta_2,
          eps=eps,
-         eta_minus=eta_minus,
-         eta_plus=eta_plus,
-         step_size_min=step_size_min,
-         step_size_max=step_size_max,
          weight_decay=weight_decay,
          scores=scores,
          score_history=score_history,
-         frozen=frozen,
+         frozens=frozens,
          steps=steps,
          maximize=maximize,
          differentiable=differentiable,
@@ -362,25 +376,25 @@ def _single_tensor_core(params: List[Tensor],
                         prevs_2: List[Tensor],
                         step_sizes: List[Tensor],
                         *,
+                        step_size_min: float,
+                        step_size_max: float,
+                        eta_minus: float,
+                        eta_plus: float,
                         beta_1_initial: float,
                         beta_1_final: float,
                         beta_1_step: float,
                         beta_2: float,
                         eps: float,
-                        eta_minus: float,
-                        eta_plus: float,
-                        step_size_min: float,
-                        step_size_max: float,
                         weight_decay: List[float],
                         scores: List[Tensor],
                         score_history: int,
-                        frozen: List[int],
+                        frozens: List[int],
                         steps: List[int],
                         maximize: bool,
                         differentiable: bool,
                         has_complex: bool):
 
-    n_frozen = len(frozen)
+    # get properties
     n_weight_decay = len(weight_decay)
     for i, param in enumerate(params):
         grad = grads[i]
@@ -391,7 +405,7 @@ def _single_tensor_core(params: List[Tensor],
         step = steps[i]
 
         # handle complex params
-        if torch.is_complex(param):
+        if has_complex:
             param = torch.view_as_real(param)
             grad = torch.view_as_real(grad)
             prev_1 = torch.view_as_real(prev_1)
@@ -420,17 +434,14 @@ def _single_tensor_core(params: List[Tensor],
         if score_history > 0:
             plasticity = score.new().resize_as_(score).fill_(1.0)
             if step >= score_history:
-                if frozen[i % n_frozen] > 0:
-                    score_max = float(torch.topk(torch.flatten(score), frozen[i % n_frozen])
-                                      .values[frozen[i % n_frozen] - 1])
+                if frozens[i] > 0:
+                    score_max = float(torch.topk(torch.flatten(score), frozens[i])
+                                      .values[frozens[i] - 1])
                     plasticity[score.ge(0.999999 * score_max)] = 0
                     score.mul_(1.0 - 1.0 / score_history)
 
         # determine step size updates
-        if differentiable:
-            step_size_update = grad.mul(prev_1.clone())
-        else:
-            step_size_update = grad.mul(prev_1)
+        step_size_update = grad.mul(prev_1)
         if score_history > 0:
             step_size_update.mul_(plasticity)
         step_size_update[step_size_update.gt(0)] = eta_plus
@@ -443,8 +454,9 @@ def _single_tensor_core(params: List[Tensor],
 
         # adjust parameter updates
         if beta_2 >= 0:
-            param_update = torch.div(grad / (1.0 - beta_1**(step + 1)),
-                                     torch.add(torch.sqrt(prev_2 / (1.0 - beta_2**(step + 1))), eps))
+            param_update = torch.div(
+                grad / (1.0 - beta_1**(step + 1)),
+                torch.add(torch.sqrt(prev_2 / (1.0 - beta_2**(step + 1))), eps))
         else:
             param_update = grad.sign()
         param_update.mul_(step_size)
@@ -453,10 +465,7 @@ def _single_tensor_core(params: List[Tensor],
             score.addcmul_(grad, param_update, value=1.0 / score_history)
 
         # weight decay
-        if differentiable:
-            param.add_(-weight_decay[i % n_weight_decay] * param_update.abs() * param.clone())
-        else:
-            param.add_(-weight_decay[i % n_weight_decay] * param_update.abs() * param)
+        param.add_(-weight_decay[i % n_weight_decay] * param_update.abs() * param)
 
         # update parameters
         param.add_(param_update, alpha=-1.0)
@@ -471,28 +480,30 @@ def _multi_tensor_core(params: List[Tensor],
                        prevs_2: List[Tensor],
                        step_sizes: List[Tensor],
                        *,
+                       step_size_min: float,
+                       step_size_max: float,
+                       eta_minus: float,
+                       eta_plus: float,
                        beta_1_initial: float,
                        beta_1_final: float,
                        beta_1_step: float,
                        beta_2: float,
                        eps: float,
-                       eta_minus: float,
-                       eta_plus: float,
-                       step_size_min: float,
-                       step_size_max: float,
                        weight_decay: List[float],
                        scores: List[Tensor],
                        score_history: int,
-                       frozen: List[int],
+                       frozens: List[int],
                        steps: List[int],
                        maximize: bool,
                        differentiable: bool,
                        has_complex: bool):
 
+    # check params
     if len(params) == 0:
         return
 
-    assert not differentiable, "_foreach ops don't support autograd"
+    # check differentiable
+    assert not differentiable, '_foreach ops do not support autograd'
 
     # handle complex params
     if has_complex:
@@ -519,13 +530,12 @@ def _multi_tensor_core(params: List[Tensor],
 
     # stability-plasticity balance
     if score_history > 0:
-        n_frozen = len(frozen)
         plasticities = [score.new().resize_as_(score).fill_(1.0) for score in scores]
         for i in range(len(scores)):
             if steps[i] >= score_history:
-                if frozen[i % n_frozen] > 0:
-                    score_max = float(torch.topk(torch.flatten(scores[i]), frozen[i % n_frozen])
-                                      .values[frozen[i % n_frozen] - 1])
+                if frozens[i] > 0:
+                    score_max = float(torch.topk(torch.flatten(scores[i]), frozens[i])
+                                      .values[frozens[i] - 1])
                     plasticities[i][scores[i].ge(0.999999 * score_max)] = 0
                     scores[i].mul_(1.0 - 1.0 / score_history)
 

@@ -7,3 +7,4 @@ recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
 
 include core_optimizer/_version_.py
+include docs/documentation.pdf

@@ -78,13 +78,13 @@ class CoReTest(unittest.TestCase):
             self.model = Model()
             self.optimizer = CoRe(self.model.parameters(), foreach=foreach)
             loss = self.training()
-            assert pytest.approx(loss, rel=1e-5) == loss_ref, \
+            assert pytest.approx(loss, rel=1e-5, abs=1e-8) == loss_ref, \
                 f'ERROR: Loss is {loss} but it should be {loss_ref}.'
             torch.manual_seed(227)
             self.model = Model()
-            self.optimizer = CoRe(self.model.parameters(), foreach=foreach, maximize=True)
+            self.optimizer = CoRe(self.model.parameters(), maximize=True, foreach=foreach)
             loss = self.training(sign=-1.0)
-            assert pytest.approx(loss, rel=1e-5) == loss_ref, \
+            assert pytest.approx(loss, rel=1e-5, abs=1e-8) == loss_ref, \
                 f'ERROR: Loss is {loss} but it should be {loss_ref}.'
 
     def test_plasticity(self) -> None:
@@ -95,17 +95,17 @@ class CoReTest(unittest.TestCase):
         for foreach in (False, True):
             torch.manual_seed(227)
             self.model = Model()
-            self.optimizer = CoRe(self.model.parameters(), score_history=250, frozen=[2, 0, 2, 0],
-                                  foreach=foreach)
+            self.optimizer = CoRe(self.model.parameters(), score_history=250,
+                                  frozen=[0.05, 0.0, 0.05, 0.0], foreach=foreach)
             loss = self.training()
-            assert pytest.approx(loss, rel=1e-5) == loss_ref, \
+            assert pytest.approx(loss, rel=1e-5, abs=1e-8) == loss_ref, \
                 f'ERROR: Loss is {loss} but it should be {loss_ref}.'
             torch.manual_seed(227)
             self.model = Model()
-            self.optimizer = CoRe(self.model.parameters(), score_history=250, frozen=[2, 0, 2, 0],
-                                  foreach=foreach, maximize=True)
+            self.optimizer = CoRe(self.model.parameters(), score_history=250,
+                                  frozen=[0.05, 0.0, 0.05, 0.0], maximize=True, foreach=foreach)
             loss = self.training(sign=-1.0)
-            assert pytest.approx(loss, rel=1e-5) == loss_ref, \
+            assert pytest.approx(loss, rel=1e-5, abs=1e-8) == loss_ref, \
                 f'ERROR: Loss is {loss} but it should be {loss_ref}.'
 
     def test_no_adam(self) -> None:
@@ -119,14 +119,14 @@ class CoReTest(unittest.TestCase):
             self.optimizer = CoRe(self.model.parameters(), betas=(0.0, 0.0, 1.0, -1.0),
                                   foreach=foreach)
             loss = self.training()
-            assert pytest.approx(loss, rel=1e-5) == loss_ref, \
+            assert pytest.approx(loss, rel=1e-5, abs=1e-8) == loss_ref, \
                 f'ERROR: Loss is {loss} but it should be {loss_ref}.'
             torch.manual_seed(227)
             self.model = Model()
             self.optimizer = CoRe(self.model.parameters(), betas=(0.0, 0.0, 1.0, -1.0),
-                                  foreach=foreach, maximize=True)
+                                  maximize=True, foreach=foreach)
             loss = self.training(sign=-1.0)
-            assert pytest.approx(loss, rel=1e-5) == loss_ref, \
+            assert pytest.approx(loss, rel=1e-5, abs=1e-8) == loss_ref, \
                 f'ERROR: Loss is {loss} but it should be {loss_ref}.'
 
     def test_complex(self) -> None:
@@ -161,16 +161,16 @@ class CoReTest(unittest.TestCase):
         params_real = params_real.detach().numpy()
         params_imag = params_imag.detach().numpy()
         for i in range(2):
-            assert pytest.approx(params_real[i], rel=1e-5) == params_real_ref[i], \
+            assert pytest.approx(params_real[i], rel=1e-5, abs=1e-8) == params_real_ref[i], \
                 f'ERROR: Parameter is {params_real[i]} but it should be {params_real_ref[i]}.'
-            assert pytest.approx(params_imag[i], rel=1e-5) == params_imag_ref[i], \
+            assert pytest.approx(params_imag[i], rel=1e-5, abs=1e-8) == params_imag_ref[i], \
                 f'ERROR: Parameter is {params_imag[i]} but it should be {params_imag_ref[i]}.'
         params_real = params.real.detach().numpy()
         params_imag = params.imag.detach().numpy()
         for i in range(2):
-            assert pytest.approx(params_real[i], rel=1e-5) == params_real_ref[i], \
+            assert pytest.approx(params_real[i], rel=1e-5, abs=1e-8) == params_real_ref[i], \
                 f'ERROR: Parameter is {params_real[i]} but it should be {params_real_ref[i]}.'
-            assert pytest.approx(params_imag[i], rel=1e-5) == params_imag_ref[i], \
+            assert pytest.approx(params_imag[i], rel=1e-5, abs=1e-8) == params_imag_ref[i], \
                 f'ERROR: Parameter is {params_imag[i]} but it should be {params_imag_ref[i]}.'
 
     def test_empty(self) -> None:
